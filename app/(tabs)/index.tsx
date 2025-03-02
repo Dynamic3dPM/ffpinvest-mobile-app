@@ -92,7 +92,7 @@ export default function HomeScreen() {
 
         {/* Subtitle with Reanimated animations */}
         <Animated.Text style={styles.subtitle} entering={FadeInDown.duration(800).delay(200).springify()}>
-          Your gateway to smarter forex trading.
+          Your Gateway to Simpler Trading.
         </Animated.Text>
 
         {/* Buttons with Reanimated animations */}
