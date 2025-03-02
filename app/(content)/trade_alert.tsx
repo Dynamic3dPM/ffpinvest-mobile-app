@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Vibration, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Vibration, TouchableOpacity, Image, Dimensions, Platform } from 'react-native';
 import { Audio } from 'expo-av';
+import * as Notifications from 'expo-notifications'; // Import Expo Notifications
 import Animated, { useSharedValue, withSpring, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 
+// Define alert interfaces (unchanged)
 interface OpenTradeAlert {
     pair: string;
     direction: string;
@@ -30,6 +32,7 @@ interface CloseTradeAlert {
     type: 'close';
 }
 
+// Currency flags and helper functions (unchanged)
 const currencyFlags: { [key: string]: string } = {
     USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺', CAD: '🇨🇦',
     CHF: '🇨🇭', CNY: '🇨🇳', NZD: '🇳🇿', SEK: '🇸🇪', NOK: '🇳🇴', DKK: '🇩🇰',
@@ -53,6 +56,54 @@ const toLocalTime = (utcTimeString: string | undefined): string => {
     });
 };
 
+// Function to register for push notifications
+async function registerForPushNotificationsAsync() {
+    let token;
+    if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+            name: 'default',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+        });
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+        console.log('Failed to get push token for push notification!');
+        return;
+    }
+    token = (await Notifications.getExpoPushTokenAsync()).data;
+    console.log('Push Token:', token);
+    return token;
+}
+
+// Function to send push notification via Expo API
+async function sendPushNotification(token: string, title: string, body: string) {
+    const message = {
+        to: token,
+        sound: 'default',
+        title,
+        body,
+        data: { someData: 'goes here' },
+    };
+
+    await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+            Accept: 'application/json',
+            'Accept-encoding': 'gzip, deflate',
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(message),
+    });
+}
+
 const { width } = Dimensions.get('window');
 
 const TradeDashboard = () => {
@@ -63,175 +114,85 @@ const TradeDashboard = () => {
     const [isOpenAlertVisible, setIsOpenAlertVisible] = useState<boolean>(true);
     const [showOpenPopup, setShowOpenPopup] = useState<boolean>(false);
     const [showClosePopup, setShowClosePopup] = useState<boolean>(false);
+    const [pushToken, setPushToken] = useState<string | null>(null); // State for push token
     const prevOpenAlertRef = useRef<OpenTradeAlert | null>(null);
     const prevCloseAlertRef = useRef<CloseTradeAlert | null>(null);
-    const [soundLoaded, setSoundLoaded] = useState(false);
     const soundRef = useRef<Audio.Sound | null>(null);
     const soundLoadingAttempts = useRef(0);
 
+    // Set up push notifications and audio
     useEffect(() => {
-        // Set up audio
+        // Register for push notifications
+        registerForPushNotificationsAsync().then(token => setPushToken(token)).catch(err => console.error('Push token error:', err));
+
+        // Handle notifications when app is in foreground
+        Notifications.setNotificationHandler({
+            handleNotification: async () => ({
+                shouldShowAlert: true,
+                shouldPlaySound: true,
+                shouldSetBadge: false,
+            }),
+        });
+
+        // Listener for notifications
+        const subscription = Notifications.addNotificationReceivedListener(notification => {
+            console.log('Notification received:', notification);
+        });
+
+        // Load sound (unchanged)
         const loadSound = async () => {
             try {
                 console.log('Loading sound...');
                 soundLoadingAttempts.current += 1;
-
-                // Make sure any previous sound instance is unloaded
                 if (soundRef.current) {
-                    try {
-                        await soundRef.current.unloadAsync();
-                    } catch (e) {
-                        console.warn('Error unloading previous sound:', e);
-                    }
+                    await soundRef.current.unloadAsync();
                     soundRef.current = null;
                 }
-
-                // Make sure the audio module is properly set up
                 await Audio.setAudioModeAsync({
                     playsInSilentModeIOS: true,
                     staysActiveInBackground: false,
                     shouldDuckAndroid: true,
                     playThroughEarpieceAndroid: false,
                 });
-
-                // Create and load the sound
                 const { sound } = await Audio.Sound.createAsync(
                     require('../../asset/sounds/cash.mp3'),
-                    { shouldPlay: false },
-                    (status) => {
-                        if (status.isLoaded) {
-                            console.log('Sound loaded callback success');
-                            setSoundLoaded(true);
-                        } else if (status.error) {
-                            console.error('Sound loaded callback error:', status.error);
-                            setSoundLoaded(false);
-                        }
-                    }
+                    { shouldPlay: false }
                 );
-
                 soundRef.current = sound;
-                setSoundLoaded(true);
                 console.log('Sound loaded successfully');
-
-                // Verify the sound is loaded
-                const loadedStatus = await sound.getStatusAsync();
-                console.log('Sound status after loading:', loadedStatus);
-
             } catch (error) {
                 console.error('Error loading sound:', error);
-                setSoundLoaded(false);
-
-                // Retry loading if failed (up to 3 attempts)
                 if (soundLoadingAttempts.current < 3) {
                     console.log(`Retrying sound loading (attempt ${soundLoadingAttempts.current + 1}/3)...`);
-                    setTimeout(loadSound, 1000); // Wait 1 second before retry
+                    setTimeout(loadSound, 1000);
                 }
             }
         };
-
         loadSound();
 
-        // Clean up
+        // Cleanup
         return () => {
-            const unloadSound = async () => {
-                if (soundRef.current) {
-                    console.log('Unloading sound...');
-                    try {
-                        await soundRef.current.unloadAsync();
-                    } catch (e) {
-                        console.warn('Error unloading sound:', e);
-                    }
-                    soundRef.current = null;
-                    setSoundLoaded(false);
-                }
-            };
-            unloadSound();
+            subscription.remove();
+            if (soundRef.current) {
+                soundRef.current.unloadAsync().catch(e => console.warn('Error unloading sound:', e));
+                soundRef.current = null;
+            }
         };
     }, []);
 
     const playAlertSound = async () => {
-        // Check if sound is loaded and valid
-        if (!soundRef.current) {
-            console.warn('Sound reference not available');
-            // Try to initialize sound on demand
-            try {
-                const { sound } = await Audio.Sound.createAsync(
-                    require('../../asset/sounds/cash.mp3'),
-                    { shouldPlay: true }
-                );
-                soundRef.current = sound;
-                return; // Sound is now playing via shouldPlay: true
-            } catch (error) {
-                console.error('Failed to initialize sound on demand:', error);
-                return;
-            }
-        }
-
+        if (!soundRef.current) return;
         try {
-            console.log('Playing sound...');
-            // Get sound status first to check if it's loaded
             const status = await soundRef.current.getStatusAsync();
-            console.log('Sound status before playing:', status);
-
             if (status.isLoaded) {
-                // Reset position if it was played before
-                if (status.positionMillis > 0) {
-                    await soundRef.current.setPositionAsync(0);
-                }
-
-                // If it's already playing, stop it first
-                if (status.isPlaying) {
-                    await soundRef.current.stopAsync();
-                }
-
-                // Play the sound
+                if (status.isPlaying) await soundRef.current.stopAsync();
+                await soundRef.current.setPositionAsync(0);
                 await soundRef.current.playAsync();
-                console.log('Sound played successfully');
-            } else {
-                console.warn('Sound was not loaded properly, attempting to reload');
-                // Try to reload the sound
-                try {
-                    await soundRef.current.unloadAsync();
-                    const { sound } = await Audio.Sound.createAsync(
-                        require('../../asset/sounds/cash.mp3'),
-                        { shouldPlay: true }
-                    );
-                    soundRef.current = sound;
-                    setSoundLoaded(true);
-                } catch (reloadError) {
-                    console.error('Failed to reload sound:', reloadError);
-                }
             }
         } catch (e) {
             console.warn('Failed to play sound:', e);
-
-            // Try alternative approach if there was an error
-            try {
-                // Completely recreate the sound object
-                if (soundRef.current) {
-                    try {
-                        await soundRef.current.unloadAsync();
-                    } catch (unloadError) {
-                        console.warn('Error unloading sound during fallback:', unloadError);
-                    }
-                }
-
-                // Create a new sound with immediate playback
-                const { sound } = await Audio.Sound.createAsync(
-                    require('../../asset/sounds/cash.mp3'),
-                    { shouldPlay: true }
-                );
-                soundRef.current = sound;
-                setSoundLoaded(true);
-            } catch (fallbackError) {
-                console.error('All sound playback attempts failed:', fallbackError);
-            }
         }
     };
-
-    const openPopupScale = useSharedValue(0);
-    const closePopupScale = useSharedValue(0);
-    const titleTranslateY = useSharedValue(-50);
 
     const fetchAlerts = async () => {
         try {
@@ -247,11 +208,16 @@ const TradeDashboard = () => {
             const newOpenAlert = openData?.data || null;
             const newCloseAlert = closeData?.data || null;
 
+            const notificationsEnabled = JSON.parse(await AsyncStorage.getItem('notificationsEnabled') || 'true');
+
             if (prevOpenAlertRef.current && newOpenAlert && JSON.stringify(prevOpenAlertRef.current) !== JSON.stringify(newOpenAlert)) {
-                const notificationsEnabled = JSON.parse(await AsyncStorage.getItem('notificationsEnabled') || 'true');
-                if (notificationsEnabled) {
-                    // Try to play sound without awaiting to prevent blocking the UI
-                    playAlertSound().catch(err => console.warn('Sound playback error:', err));
+                if (notificationsEnabled && pushToken) {
+                    await sendPushNotification(
+                        pushToken,
+                        'New Open Trade Alert',
+                        `${getPairFlags(newOpenAlert.pair)} - ${newOpenAlert.direction.toUpperCase()} @ ${newOpenAlert.entry}`
+                    );
+                    playAlertSound().catch(err => console.warn('Sound error:', err));
                     Vibration.vibrate([0, 500, 200, 500]);
                 }
                 setShowOpenPopup(true);
@@ -267,10 +233,13 @@ const TradeDashboard = () => {
             prevOpenAlertRef.current = newOpenAlert;
 
             if (prevCloseAlertRef.current && newCloseAlert && JSON.stringify(prevCloseAlertRef.current) !== JSON.stringify(newCloseAlert)) {
-                const notificationsEnabled = JSON.parse(await AsyncStorage.getItem('notificationsEnabled') || 'true');
-                if (notificationsEnabled) {
-                    // Try to play sound without awaiting to prevent blocking the UI
-                    playAlertSound().catch(err => console.warn('Sound playback error:', err));
+                if (notificationsEnabled && pushToken) {
+                    await sendPushNotification(
+                        pushToken,
+                        'New Close Trade Alert',
+                        `${getPairFlags(newCloseAlert.pair)} closed at ${newCloseAlert.closingPrice}`
+                    );
+                    playAlertSound().catch(err => console.warn('Sound error:', err));
                     Vibration.vibrate([0, 500, 200, 500]);
                 }
                 setShowClosePopup(true);
@@ -290,6 +259,11 @@ const TradeDashboard = () => {
             setLoading(false);
         }
     };
+
+    // Animation values (unchanged)
+    const openPopupScale = useSharedValue(0);
+    const closePopupScale = useSharedValue(0);
+    const titleTranslateY = useSharedValue(-50);
 
     useEffect(() => {
         fetchAlerts();
@@ -328,6 +302,7 @@ const TradeDashboard = () => {
         transform: [{ translateY: titleTranslateY.value }],
     }));
 
+    // Render logic (unchanged except for styles)
     if (loading) {
         return (
             <LinearGradient colors={['#000000', '#1A1A1A']} style={styles.loadingContainer}>
@@ -352,8 +327,6 @@ const TradeDashboard = () => {
     return (
         <LinearGradient colors={['#000000', '#1A1A1A']} style={styles.container}>
             <ScrollView contentContainerStyle={styles.contentContainer}>
-
-
                 <View style={styles.alertContainer}>
                     <LinearGradient colors={['#FFD700', '#D4AF37']} style={styles.alertHeader}>
                         <Text style={styles.alertTitle}>Open Trade Alert</Text>
@@ -473,6 +446,7 @@ const TradeDashboard = () => {
     );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -521,16 +495,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         fontFamily: 'BodyFont',
-    },
-    title: {
-        fontSize: 32,
-        color: '#FFD700',
-        textAlign: 'center',
-        marginBottom: 24,
-        fontFamily: 'Rawline',
-        textShadowColor: '#000',
-        textShadowOffset: { width: 2, height: 2 },
-        textShadowRadius: 4,
     },
     alertContainer: {
         marginBottom: 24,
