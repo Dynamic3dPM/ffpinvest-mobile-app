@@ -1,32 +1,43 @@
-import { Link, Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+const ffpinvestImg = require('../asset/images/crying_404.jpg');
 
-export default function NotFoundScreen() {
+const NotFound = () => {
+  const navigation = useNavigation();
+
   return (
-    <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
-      <ThemedView style={styles.container}>
-        <ThemedText type="title">This screen doesn't exist.</ThemedText>
-        <Link href="/" style={styles.link}>
-          <ThemedText type="link">Go to home screen!</ThemedText>
-        </Link>
-      </ThemedView>
-    </>
+    <View style={styles.container}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={24} color="#FFD700" />
+      </TouchableOpacity>
+      <Text style={styles.text}>Page Not Found 404</Text>
+      <Image source={ffpinvestImg} style={{ width: 600, height: 400, marginVertical: 20 }} />
+
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    alignItems: 'center',
+    backgroundColor: '#000',
   },
-  link: {
-    marginTop: 15,
-    paddingVertical: 15,
+  text: {
+    color: '#FFD700',
+    fontSize: 24,
+    fontWeight: 'bold',
+    fontFamily: 'HeaderFont',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 40,
+    left: 20,
   },
 });
+
+export default NotFound;

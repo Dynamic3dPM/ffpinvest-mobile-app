@@ -1,39 +1,51 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import React from 'react';
+import { Stack, useRouter } from 'expo-router';
+import { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+  // Set to true by default to skip authentication for testing
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
-    if (loaded) {
+    // Directly navigate to tabs screen for testing
+    if (isAuthenticated !== null) {
+      router.replace('/(tabs)');
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [isAuthenticated, router]);
 
-  if (!loaded) {
-    return null;
-  }
+  if (isAuthenticated === null) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(auth)/SignUp" />
+      <Stack.Screen name="(auth)/login" />
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen
+        name="(content)/view_newsletter"
+        options={{
+          title: 'Newsletter',
+          headerShown: true,
+          headerStyle: { backgroundColor: '#000000' },
+          headerTintColor: '#FFD700',
+          headerTitleStyle: { fontFamily: 'HeaderFont' },
+        }}
+      />
+      <Stack.Screen
+        name="(content)/history_newsletter"
+        options={{
+          title: 'Newsletter History',
+          headerShown: true,
+          headerStyle: { backgroundColor: '#000000' },
+          headerTintColor: '#FFD700',
+          headerTitleStyle: { fontFamily: 'HeaderFont' },
+        }}
+      />
+    </Stack>
   );
 }
