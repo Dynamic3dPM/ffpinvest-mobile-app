@@ -1,5 +1,6 @@
 import React from 'react';
 import { Stack, useRouter } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
@@ -22,30 +23,32 @@ export default function RootLayout() {
   if (isAuthenticated === null) return null;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)/SignUp" />
-      <Stack.Screen name="(auth)/login" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen
-        name="(content)/view_newsletter"
-        options={{
-          title: 'Newsletter',
-          headerShown: true,
-          headerStyle: { backgroundColor: '#000000' },
-          headerTintColor: '#FFD700',
-          headerTitleStyle: { fontFamily: 'HeaderFont' },
-        }}
-      />
-      <Stack.Screen
-        name="(content)/history_newsletter"
-        options={{
-          title: 'Newsletter History',
-          headerShown: true,
-          headerStyle: { backgroundColor: '#000000' },
-          headerTintColor: '#FFD700',
-          headerTitleStyle: { fontFamily: 'HeaderFont' },
-        }}
-      />
-    </Stack>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)/SignUp" />
+        <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="(content)/view_newsletter"
+          options={{
+            title: 'Newsletter',
+            headerShown: true,
+            headerStyle: { backgroundColor: '#000000' },
+            headerTintColor: '#FFD700',
+            headerTitleStyle: { fontFamily: 'HeaderFont' },
+          }}
+        />
+        <Stack.Screen
+          name="(content)/history_newsletter"
+          options={{
+            title: 'Newsletter History',
+            headerShown: true,
+            headerStyle: { backgroundColor: '#000000' },
+            headerTintColor: '#FFD700',
+            headerTitleStyle: { fontFamily: 'HeaderFont' },
+          }}
+        />
+      </Stack>
+    </GestureHandlerRootView>
   );
 }

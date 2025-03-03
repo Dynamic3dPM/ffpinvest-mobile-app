@@ -1,250 +1,235 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { StyleSheet, View, Text, TouchableOpacity, FlatList, Image, Dimensions } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, Dimensions, FlatList, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 import { useFocusEffect } from 'expo-router';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
+const VIDEO_HEIGHT = width * 16 / 9; // 9:16 aspect ratio flipped for calculation
 
-// Sample financial videos (using publicly available demo URLs)
+// Sample financial videos (YouTube URLs)
 const videoSamples = [
     {
         id: '1',
-        title: 'Stock Market Basics for Beginners',
-        source: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-        thumbnail: 'https://img.youtube.com/vi/DYKMbdL8P1U/maxresdefault.jpg',
-        duration: '10:35',
+        title: 'Stock Market vs FOREX Trading',
+        source: 'https://www.youtube.com/embed/pCg72sZKOpg?autoplay=1&mute=0&controls=0&rel=0&showinfo=0',
+        duration: '00:57',
+        thumbnail: 'https://img.youtube.com/vi/pCg72sZKOpg/mqdefault.jpg',
     },
     {
         id: '2',
-        title: 'Understanding Forex Trading',
-        source: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-        thumbnail: 'https://img.youtube.com/vi/8I4dIO9vSBE/maxresdefault.jpg',
-        duration: '15:22',
-    },
-    {
-        id: '3',
-        title: 'Investment Strategies 2025',
-        source: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-        thumbnail: 'https://img.youtube.com/vi/0sY5G1Xw1bY/maxresdefault.jpg',
-        duration: '8:47',
+        title: 'Placing Your First Order',
+        source: 'https://www.youtube.com/embed/JQ6yh4JZc_0?autoplay=1&mute=0&controls=0&rel=0&showinfo=0',
+        duration: '2:01',
+        thumbnail: 'https://img.youtube.com/vi/JQ6yh4JZc_0?/mqdefault.jpg',
     },
 ];
 
 export default function VideoScreen() {
-    const [selectedVideo, setSelectedVideo] = useState(videoSamples[0]);
-    const wasPlayingRef = useRef(false);
-    const isMountedRef = useRef(true);
-    const [isPlayerReady, setIsPlayerReady] = useState(false);
-    const playerRef = useRef(null);
-
-    // Initialize the player once with a default source
-    const player = useVideoPlayer(videoSamples[0].source, player => {
-        playerRef.current = player;
-        if (isMountedRef.current) {
-            player.loop = true;
-            player.play();
-            setIsPlayerReady(true);
-        }
-    });
-
-    // Update player source when selectedVideo changes
-    useEffect(() => {
-        if (isPlayerReady && playerRef.current && isMountedRef.current) {
-            playerRef.current.replace(selectedVideo.source);
-        }
-    }, [selectedVideo, isPlayerReady]);
-
-    // Track component mounting status and cleanup
-    useEffect(() => {
-        isMountedRef.current = true;
-
-        return () => {
-            isMountedRef.current = false;
-            if (playerRef.current) {
-                playerRef.current.pause(); // Explicitly pause
-                playerRef.current = null; // Clear reference
-            }
-        };
-    }, []);
-
-    // Safe player interaction method
-    const safePlayerAction = (action) => {
-        if (isPlayerReady && playerRef.current && isMountedRef.current) {
-            try {
-                action(playerRef.current);
-            } catch (error) {
-                console.log("Video player action failed:", error);
-            }
-        }
-    };
-
-    // Handle focus/blur events to control video playback
-    useFocusEffect(
-        React.useCallback(() => {
-            if (isPlayerReady && wasPlayingRef.current) {
-                safePlayerAction(p => p.play());
-            }
-            return () => {
-                if (isPlayerReady && playerRef.current) {
-                    wasPlayingRef.current = Boolean(playerRef.current.playing);
-                    safePlayerAction(p => p.pause());
-                }
-            };
-        }, [isPlayerReady])
-    );
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [playing, setPlaying] = useState(true);
+    const [isFocused, setIsFocused] = useState(true);
+    const flatListRef = useRef(null);
+    const webViewRef = useRef(null);
 
     const togglePlayPause = () => {
-        safePlayerAction(p => {
-            if (p.playing) {
-                p.pause();
-            } else {
-                p.play();
-            }
-        });
+        setPlaying(!playing);
     };
 
-    const renderVideoItem = ({ item }) => (
+    // Handle screen focus/blur
+    useFocusEffect(
+        useCallback(() => {
+            // When screen comes into focus
+            setIsFocused(true);
+
+            // When screen loses focus
+            return () => {
+                setIsFocused(false);
+                setPlaying(false);
+                // Try to pause the video by injecting JavaScript if webViewRef is available
+                if (webViewRef.current) {
+                    webViewRef.current.injectJavaScript(`
+                        var videoElements = document.getElementsByTagName('video');
+                        for(var i = 0; i < videoElements.length; i++) {
+                            videoElements[i].pause();
+                        }
+                        true;
+                    `);
+                }
+            };
+        }, [])
+    );
+
+    const renderVideoPlayer = () => {
+        // Don't render the WebView at all if not focused
+        if (!isFocused) {
+            return (
+                <View style={styles.videoPlayerContainer}>
+                    <Image
+                        source={{ uri: videoSamples[currentIndex].thumbnail }}
+                        style={styles.video}
+                        resizeMode="cover"
+                    />
+                    <LinearGradient
+                        colors={['rgba(0,0,0,0.7)', 'transparent']}
+                        style={styles.gradientOverlay}
+                    >
+                        <View style={styles.videoDetails}>
+                            <Text style={styles.videoTitle}>{videoSamples[currentIndex].title}</Text>
+                            <Text style={styles.videoDuration}>{videoSamples[currentIndex].duration}</Text>
+                        </View>
+                    </LinearGradient>
+                </View>
+            );
+        }
+
+        const videoUrl = playing && isFocused
+            ? videoSamples[currentIndex].source
+            : `${videoSamples[currentIndex].source.split('?')[0]}?autoplay=0&mute=1&controls=0&rel=0&showinfo=0`;
+
+        return (
+            <View style={styles.videoPlayerContainer}>
+                <WebView
+                    ref={webViewRef}
+                    source={{ uri: videoUrl }}
+                    style={styles.video}
+                    allowsFullscreenVideo
+                    javaScriptEnabled
+                    mediaPlaybackRequiresUserAction={false}
+                    key={`video-${currentIndex}-${playing}-${isFocused}`} // Force remount when state changes
+                />
+                <LinearGradient
+                    colors={['rgba(0,0,0,0.7)', 'transparent']}
+                    style={styles.gradientOverlay}
+                >
+                    <View style={styles.videoDetails}>
+                        <Text style={styles.videoTitle}>{videoSamples[currentIndex].title}</Text>
+                        <Text style={styles.videoDuration}>{videoSamples[currentIndex].duration}</Text>
+                    </View>
+                </LinearGradient>
+                <View style={styles.controlsContainer}>
+                    <TouchableOpacity onPress={togglePlayPause} style={styles.controlButton}>
+                        <Ionicons
+                            name={playing ? 'pause' : 'play'}
+                            size={30}
+                            color="#FFD700"
+                        />
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    };
+
+    const renderThumbnailItem = ({ item, index }) => (
         <TouchableOpacity
-            style={styles.videoItem}
+            style={styles.thumbnailItem}
             onPress={() => {
-                safePlayerAction(p => p.replace(item.source));
-                setSelectedVideo(item);
+                setCurrentIndex(index);
+                setPlaying(true);
+                flatListRef.current?.scrollToIndex({ index: 0, animated: true }); // Scroll back to top
             }}
         >
             <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
-            <View style={styles.videoInfo}>
-                <Text style={styles.videoTitle}>{item.title}</Text>
-                <Text style={styles.videoDuration}>{item.duration}</Text>
+            <View style={styles.thumbnailInfo}>
+                <Text style={styles.thumbnailTitle}>{item.title}</Text>
+                <Text style={styles.thumbnailDuration}>{item.duration}</Text>
             </View>
         </TouchableOpacity>
     );
 
     return (
-        <LinearGradient colors={['#000000', '#1A1A1A']} style={styles.container}>
-            <View style={styles.playerContainer}>
-                {isPlayerReady ? (
-                    <VideoView
-                        style={styles.video}
-                        player={player}
-                        allowsFullscreen
-                        allowsPictureInPicture
-                        nativeControls
-                    />
-                ) : (
-                    <View style={styles.video}>
-                        <Text style={styles.loadingText}>Loading video player...</Text>
-                    </View>
-                )}
-                <View style={styles.videoDetails}>
-                    <Text style={styles.videoTitleText}>{selectedVideo.title}</Text>
-                    <View style={styles.controlsContainer}>
-                        <TouchableOpacity onPress={togglePlayPause} style={styles.controlButton}>
-                            <Ionicons
-                                name={playerRef.current?.playing ? 'pause' : 'play'}
-                                size={24}
-                                color="#FFD700"
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.controlButton}>
-                            <Ionicons name="expand" size={24} color="#FFD700" />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-
-            <View style={styles.suggestionsContainer}>
-                <Text style={styles.suggestionsTitle}>Related Financial Videos</Text>
-                <FlatList
-                    data={videoSamples}
-                    renderItem={renderVideoItem}
-                    keyExtractor={item => item.id}
-                    horizontal={false}
-                    showsVerticalScrollIndicator={false}
-                />
-            </View>
-        </LinearGradient>
+        <View style={styles.container}>
+            <FlatList
+                ref={flatListRef}
+                data={[{ id: 'player' }, ...videoSamples]} // Include player as first item
+                renderItem={({ item, index }) => {
+                    if (index === 0) return renderVideoPlayer();
+                    return renderThumbnailItem({ item, index: index - 1 });
+                }}
+                keyExtractor={(item, index) => item.id + index}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.flatListContent}
+            />
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#000',
     },
-    playerContainer: {
-        backgroundColor: '#000000',
-        borderBottomWidth: 1,
-        borderBottomColor: '#008000',
+    flatListContent: {
+        paddingBottom: 20,
+    },
+    videoPlayerContainer: {
+        width: width,
+        height: VIDEO_HEIGHT,
+        position: 'relative',
     },
     video: {
         width: width,
-        height: width * 9 / 16, // 16:9 aspect ratio
+        height: VIDEO_HEIGHT,
+    },
+    gradientOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 150,
+        padding: 20,
     },
     videoDetails: {
-        padding: 10,
-        backgroundColor: '#1A1A1A',
-    },
-    videoTitleText: {
-        color: '#FFD700',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 10,
-        fontFamily: 'sans-serif-medium',
-    },
-    controlsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'flex-start',
-        alignItems: 'center',
-    },
-    controlButton: {
-        padding: 8,
-        marginRight: 15,
-    },
-    suggestionsContainer: {
-        flex: 1,
-        padding: 10,
-    },
-    suggestionsTitle: {
-        color: '#FFD700',
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 10,
-        fontFamily: 'sans-serif',
-    },
-    videoItem: {
-        flexDirection: 'row',
-        marginBottom: 15,
-        backgroundColor: '#222222',
-        borderRadius: 8,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#008000',
-    },
-    thumbnail: {
-        width: 120,
-        height: 68,
-    },
-    videoInfo: {
-        flex: 1,
-        padding: 10,
+        marginTop: 40,
     },
     videoTitle: {
         color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '500',
+        fontSize: 18,
+        fontWeight: 'bold',
         marginBottom: 5,
-        fontFamily: 'sans-serif',
+        fontFamily: 'sans-serif-medium',
     },
     videoDuration: {
         color: '#FFD700',
-        fontSize: 12,
+        fontSize: 14,
         fontFamily: 'sans-serif',
     },
-    loadingText: {
+    controlsContainer: {
+        position: 'absolute',
+        bottom: 20,
+        right: 20,
+        alignItems: 'center',
+    },
+    controlButton: {
+        padding: 10,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        borderRadius: 25,
+    },
+    thumbnailItem: {
+        flexDirection: 'row',
+        marginHorizontal: 10,
+        marginVertical: 5,
+        backgroundColor: '#222',
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
+    thumbnail: {
+        width: 120,
+        height: 213, // 9:16 ratio for thumbnails
+    },
+    thumbnailInfo: {
+        flex: 1,
+        padding: 10,
+    },
+    thumbnailTitle: {
         color: '#FFFFFF',
         fontSize: 16,
-        textAlign: 'center',
-        paddingTop: width * 9 / 32, // Center vertically in 16:9 space
+        fontWeight: '500',
+        marginBottom: 5,
+    },
+    thumbnailDuration: {
+        color: '#FFD700',
+        fontSize: 12,
     },
 });
