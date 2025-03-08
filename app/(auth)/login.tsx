@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { fetchAuthSession, resendSignUpCode, signIn } from 'aws-amplify/auth';
 
 export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
@@ -72,37 +73,26 @@ export default function LoginScreen() {
     Keyboard.dismiss();
 
     try {
-      const response = await fetch(
-        'https://r70dmxlnf8.execute-api.us-east-1.amazonaws.com/default/ffp-invest-mobile-auth',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'signin',
-            username: data.username,
-            password: data.password,
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (response.ok) {
-        const token = result.token || result.idToken || result.accessToken;
-        if (!token) throw new Error('No token returned from server');
-
-        await AsyncStorage.setItem('userToken', token);
-        console.log('User signed in:', result);
-        console.log('Token stored:', token);
-
-        reset();
+      const { isSignedIn, nextStep } = await signIn({
+        username: data?.username, password: data?.password, options: {
+          authFlowType: "USER_PASSWORD_AUTH",
+        },
+      });
+      console.log('User signed in:', isSignedIn, nextStep);
+      if (isSignedIn) {
+        
         setLoading(false);
-
-        router.replace('/(tabs)'); // Navigate to home (index) tab
-      } else {
-        throw new Error(result.error || 'Login failed');
+        router.replace('/(tabs)');
+      } if (nextStep?.signInStep === "CONFIRM_SIGN_UP") {
+        await resendSignUpCode({
+          username: data?.username,
+        });
+        router.replace({
+          pathname: "/(auth)/VerifyUser",
+          params: {
+            username: data?.username
+          }
+        })
       }
     } catch (error) {
       setLoading(false);
@@ -189,7 +179,7 @@ export default function LoginScreen() {
                     <Ionicons
                       name={passwordVisible ? 'eye-off' : 'eye'}
                       size={24}
-                      color="#FFD700" // Updated to gold for consistency
+                      color="#FFD700" 
                     />
                   </TouchableOpacity>
                 </View>
@@ -206,7 +196,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity onPress={() => { }}>
+              <TouchableOpacity onPress={() => router.push("/(auth)/ForgotPassword")}>
                 <Text style={styles.formLink}>Forgot password?</Text>
               </TouchableOpacity>
             </View>
@@ -312,11 +302,15 @@ const styles = StyleSheet.create({
     borderStyle: 'solid',
   },
   passwordContainer: {
+    position: "relative",
     flexDirection: 'row',
     alignItems: 'center',
   },
   eyeIcon: {
     marginLeft: 10,
+    position: "absolute",
+    top: 12,
+    right: 10
   },
   inputError: {
     marginTop: 4,
