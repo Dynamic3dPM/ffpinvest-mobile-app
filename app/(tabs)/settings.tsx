@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { signOut } from 'aws-amplify/auth';
 
 export default function Settings() {
   const router = useRouter();
@@ -9,8 +10,7 @@ export default function Settings() {
 
   const handleLogout = async () => {
     try {
-      await AsyncStorage.removeItem('userToken');
-      router.replace('/(auth)/login');
+      await signOut();
     } catch (error) {
       console.error('Logout failed:', error);
     }
